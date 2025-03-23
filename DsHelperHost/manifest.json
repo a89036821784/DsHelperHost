@@ -1,0 +1,9 @@
+﻿{
+  "name": "com.example.ds_helper",
+  "description": "DS Helper Native Host",
+  "path": "C:\\Users\\HYPERPC\\source\\repos\\DsHelperHost\\DsHelperHost\\bin\\Debug\\net9.0\\DsHelperHost.exe",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://iappifgdfcbnekhmcmjcedpofmdcmcka/"
+  ]
+}

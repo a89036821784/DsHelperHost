@@ -1,0 +1,28 @@
+# Chrome Extension specific
+*.crx
+*.pem
+*.zip
+
+# Build directories
+dist/
+build/
+
+# Node.js
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+package-lock.json
+
+# IDE specific
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Logs
+*.log
+
+# Temporary files
+.tmp/
+.temp/ 
