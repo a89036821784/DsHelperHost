@@ -24,10 +24,8 @@
       "js": ["content.js"]
     }
   ],
-  "externally_connectable": {
-    "matches": ["<all_urls>"]
-  },
-  "allowed_origins": [
-    "chrome-extension://iappifgdfcbnekhmcmjcedpofmdcmcka/"
-  ]
+   "externally_connectable": {
+    "matches": ["<all_urls>"],
+    "ids": ["iappifgdfcbnekhmcmjcedpofmdcmcka"]
+  }
 }
