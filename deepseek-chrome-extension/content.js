@@ -1,3 +1,57 @@
+/**
+ * Константы для селекторов элементов DeepSeek
+ */
+// Селектор для textarea ввода сообщения
+const CHAT_INPUT_SELECTOR = 'textarea#chat-input';
+
+// Селектор для поля загрузки файлов
+const FILE_INPUT_SELECTOR = 'input[type="file"]';
+
+// Селектор для блоков ответов DeepSeek
+const RESPONSE_BLOCKS_SELECTOR = '.ds-markdown.ds-markdown--block';
+
+// Селектор для поиска кнопок (в том числе кнопки отправки)
+const BUTTON_SELECTOR = 'div[role="button"]';
+
+/**
+ * Константы для текстовых меток и поиска элементов
+ */
+// Текст для определения наличия процесса загрузки файла
+const UPLOADING_TEXT = 'Uploading';
+
+// Текст для кнопки создания нового чата
+const NEW_CHAT_TEXT = 'New chat';
+
+/**
+ * Константы для интервалов и таймаутов
+ */
+// Задержка после клика на кнопку "New Chat" (мс)
+const NEW_CHAT_DELAY = 500;
+
+// Интервал проверки загрузки файлов (мс)
+const FILE_UPLOAD_CHECK_INTERVAL = 1000;
+
+// Таймаут ожидания загрузки файлов (мс)
+const FILE_UPLOAD_TIMEOUT = 30000; // 30 секунд
+
+// Интервал проверки стабильности ответа (мс)
+const RESPONSE_CHECK_INTERVAL = 500;
+
+// Количество проверок для определения стабильности ответа
+const STABLE_RESPONSE_CHECKS = 5;
+
+// Таймаут ожидания ответа (мс)
+const RESPONSE_TIMEOUT = 120000; // 2 минуты
+
+/**
+ * Другие константы
+ */
+// Префикс для всех логов расширения
+const LOG_PREFIX = '[DS Helper]';
+
+// Флаг для отслеживания проверки ответа
+let isCheckingResponse = false;
+
 // Функция для создания нового чата
 function clickNewChat() {
   return new Promise((resolve) => {
@@ -5,27 +59,27 @@ function clickNewChat() {
       // Ищем кнопку "New chat" по тексту и SVG-иконке
       const elements = Array.from(document.querySelectorAll('div'));
       const newChatDiv = elements.find(div => 
-        div?.firstChild?.tagName === 'svg' && div.textContent === "New chat"
+        div?.firstChild?.tagName === 'svg' && div.textContent === NEW_CHAT_TEXT
       );
 
       if (newChatDiv) {
-        console.log('[DS Helper] Нажатие на кнопку "New chat"');
+        console.log(`${LOG_PREFIX} Нажатие на кнопку "New chat"`);
         newChatDiv.click();
       } else {
-        console.warn('[DS Helper] Кнопка "New chat" не найдена');
+        console.warn(`${LOG_PREFIX} Кнопка "New chat" не найдена`);
       }
     } catch (error) {
-      console.error('[DS Helper] Ошибка при создании нового чата:', error);
+      console.error(`${LOG_PREFIX} Ошибка при создании нового чата:`, error);
     } finally {
-      // В любом случае завершаем Promise через 500мс
-      setTimeout(resolve, 500);
+      // В любом случае завершаем Promise через установленную задержку
+      setTimeout(resolve, NEW_CHAT_DELAY);
     }
   });
 }
 
 // Поиск кнопки отправки
 function findSendButton() {
-  const buttons = Array.from(document.querySelectorAll('div[role="button"]'));
+  const buttons = Array.from(document.querySelectorAll(BUTTON_SELECTOR));
   
   // Находим кнопку отправки (обычно кнопка с пустым текстом или только с SVG)
   return buttons.find(button => {
@@ -44,7 +98,7 @@ function findSendButton() {
 // Обработка сообщений от background script
 function handleMessage(msg) {
   if (!msg || !msg.message) {
-    console.error('[DS Helper] Некорректный формат сообщения');
+    console.error(`${LOG_PREFIX} Некорректный формат сообщения`);
     return;
   }
 
@@ -52,7 +106,7 @@ function handleMessage(msg) {
   clickNewChat().then(() => {
     // Вставляем текст сообщения в поле ввода
     try {
-      const inputElement = document.querySelector('textarea#chat-input');
+      const inputElement = document.querySelector(CHAT_INPUT_SELECTOR);
       if (inputElement) {
         // Устанавливаем текст и генерируем события
         inputElement.value = msg.message;
@@ -66,28 +120,28 @@ function handleMessage(msg) {
         const adjacentDiv = inputElement.nextElementSibling;
         if (adjacentDiv) adjacentDiv.innerText = msg.message;
         
-        console.log('[DS Helper] Сообщение вставлено в поле ввода');
+        console.log(`${LOG_PREFIX} Сообщение вставлено в поле ввода`);
       } else {
-        console.error('[DS Helper] Поле ввода не найдено');
+        console.error(`${LOG_PREFIX} Поле ввода не найдено`);
       }
     } catch (error) {
-      console.error('[DS Helper] Ошибка при вставке сообщения:', error);
+      console.error(`${LOG_PREFIX} Ошибка при вставке сообщения:`, error);
     }
 
     // Обработка файлов или отправка сообщения
     if (msg.fileContents?.length > 0) {
-      console.log('[DS Helper] Обнаружены файлы, загружаем их');
+      console.log(`${LOG_PREFIX} Обнаружены файлы, загружаем их`);
       handleFiles(msg.fileContents, msg.fileNames);
     } else {
-      console.log('[DS Helper] Файлов нет, отправляем сообщение');
+      console.log(`${LOG_PREFIX} Файлов нет, отправляем сообщение`);
       
       const sendButton = findSendButton();
       if (sendButton) {
         sendButton.click();
-        console.log('[DS Helper] Сообщение отправлено');
+        console.log(`${LOG_PREFIX} Сообщение отправлено`);
         checkForResponse();
       } else {
-        console.error('[DS Helper] Кнопка отправки не найдена');
+        console.error(`${LOG_PREFIX} Кнопка отправки не найдена`);
       }
     }
   });
@@ -96,9 +150,9 @@ function handleMessage(msg) {
 // Обработка файлов в формате base64
 function handleFiles(fileContents, fileNames) {
   try {
-    const fileInput = document.querySelector('input[type="file"]');
+    const fileInput = document.querySelector(FILE_INPUT_SELECTOR);
     if (!fileInput) {
-      console.error('[DS Helper] Поле загрузки файлов не найдено');
+      console.error(`${LOG_PREFIX} Поле загрузки файлов не найдено`);
       return;
     }
 
@@ -140,19 +194,19 @@ function handleFiles(fileContents, fileNames) {
         filesConverted++;
         
       } catch (error) {
-        console.error(`[DS Helper] Ошибка конвертации файла ${i}:`, error);
+        console.error(`${LOG_PREFIX} Ошибка конвертации файла ${i}:`, error);
       }
     }
 
     if (filesConverted === 0) {
-      console.error('[DS Helper] Не удалось подготовить ни один файл');
+      console.error(`${LOG_PREFIX} Не удалось подготовить ни один файл`);
       return;
     }
 
     // Применяем файлы к input элементу
     try {
       fileInput.files = dataTransfer.files;
-      console.log(`[DS Helper] Загружено файлов: ${filesConverted}`);
+      console.log(`${LOG_PREFIX} Загружено файлов: ${filesConverted}`);
       
       // Генерируем событие изменения
       fileInput.dispatchEvent(new Event('change', { bubbles: true }));
@@ -160,37 +214,34 @@ function handleFiles(fileContents, fileNames) {
       // Ждем завершения загрузки и нажимаем кнопку отправки
       checkUploadAndClickSend();
     } catch (error) {
-      console.error('[DS Helper] Ошибка при установке файлов:', error);
+      console.error(`${LOG_PREFIX} Ошибка при установке файлов:`, error);
       if (fileNames?.length > 0) {
         alert(`Пожалуйста, загрузите файлы вручную: ${fileNames.join(', ')}`);
       }
     }
   } catch (error) {
-    console.error('[DS Helper] Ошибка обработки файлов:', error);
+    console.error(`${LOG_PREFIX} Ошибка обработки файлов:`, error);
   }
 }
-
-// Флаг для отслеживания проверки ответа
-let isCheckingResponse = false;
 
 // Ожидание и извлечение ответа DeepSeek
 function waitForButtonEnabledAndGetResponse() {
   if (isCheckingResponse) return;
   
   isCheckingResponse = true;
-  console.log('[DS Helper] Ожидание ответа DeepSeek...');
+  console.log(`${LOG_PREFIX} Ожидание ответа DeepSeek...`);
   
   // Находим начальное количество блоков с ответами
-  const initialElements = document.querySelectorAll('.ds-markdown.ds-markdown--block');
+  const initialElements = document.querySelectorAll(RESPONSE_BLOCKS_SELECTOR);
   const initialCount = initialElements.length;
   const lastInitialElement = initialCount > 0 ? initialElements[initialCount - 1] : null;
   
   let lastTextContent = '';
   let stableContentCounter = 0;
   
-  // Проверяем появление нового ответа каждые 500мс
+  // Проверяем появление нового ответа с заданным интервалом
   const checkInterval = setInterval(() => {
-    const currentElements = document.querySelectorAll('.ds-markdown.ds-markdown--block');
+    const currentElements = document.querySelectorAll(RESPONSE_BLOCKS_SELECTOR);
     
     if (currentElements.length > initialCount) {
       // Получаем последний элемент с ответом
@@ -203,9 +254,9 @@ function waitForButtonEnabledAndGetResponse() {
           // Контент стабилен, увеличиваем счетчик
           stableContentCounter++;
           
-          // Если контент не менялся 2.5 секунды (5 проверок), считаем ответ законченным
-          if (stableContentCounter >= 5) {
-            console.log('[DS Helper] Ответ получен (стабилен 2.5с)');
+          // Если контент не менялся заданное количество проверок, считаем ответ законченным
+          if (stableContentCounter >= STABLE_RESPONSE_CHECKS) {
+            console.log(`${LOG_PREFIX} Ответ получен (стабилен ${(STABLE_RESPONSE_CHECKS * RESPONSE_CHECK_INTERVAL) / 1000}с)`);
             
             // Извлекаем текст с сохранением форматирования
             const tempDiv = document.createElement('div');
@@ -236,17 +287,17 @@ function waitForButtonEnabledAndGetResponse() {
         }
       }
     }
-  }, 500);
+  }, RESPONSE_CHECK_INTERVAL);
   
   // Таймаут на случай долгого ответа
   setTimeout(() => {
     if (!isCheckingResponse) return;
     
     clearInterval(checkInterval);
-    console.log('[DS Helper] Тайм-аут ожидания ответа (2 мин)');
+    console.log(`${LOG_PREFIX} Тайм-аут ожидания ответа (${RESPONSE_TIMEOUT / 1000} сек)`);
     
     // Пробуем получить ответ даже после тайм-аута
-    const elements = document.querySelectorAll('.ds-markdown.ds-markdown--block');
+    const elements = document.querySelectorAll(RESPONSE_BLOCKS_SELECTOR);
     if (elements.length > initialCount) {
       const lastElement = elements[elements.length - 1];
       
@@ -269,7 +320,7 @@ function waitForButtonEnabledAndGetResponse() {
     }
     
     isCheckingResponse = false;
-  }, 120000); // 2 минуты
+  }, RESPONSE_TIMEOUT);
 }
 
 // Запуск проверки ответа
@@ -279,36 +330,36 @@ function checkForResponse() {
 
 // Проверка завершения загрузки файлов и отправка сообщения
 function checkUploadAndClickSend() {
-  console.log('[DS Helper] Проверка загрузки файлов...');
+  console.log(`${LOG_PREFIX} Проверка загрузки файлов...`);
   
   const checkInterval = setInterval(() => {
     try {
       // Если текст "Uploading" отсутствует, значит загрузка завершена
-      if (!document.body.textContent.includes("Uploading")) {
+      if (!document.body.textContent.includes(UPLOADING_TEXT)) {
         const sendButton = findSendButton();
         
         if (sendButton) {
           sendButton.click();
-          console.log('[DS Helper] Сообщение с файлами отправлено');
+          console.log(`${LOG_PREFIX} Сообщение с файлами отправлено`);
           checkForResponse();
         } else {
-          console.error('[DS Helper] Кнопка отправки не найдена');
+          console.error(`${LOG_PREFIX} Кнопка отправки не найдена`);
         }
         
         clearInterval(checkInterval);
       }
     } catch (error) {
-      console.error('[DS Helper] Ошибка при проверке загрузки:', error);
+      console.error(`${LOG_PREFIX} Ошибка при проверке загрузки:`, error);
       clearInterval(checkInterval);
     }
-  }, 1000);
+  }, FILE_UPLOAD_CHECK_INTERVAL);
   
-  // Прекращаем проверку через 30 секунд
+  // Прекращаем проверку через заданный таймаут
   setTimeout(() => {
     if (checkInterval) {
       clearInterval(checkInterval);
     }
-  }, 30000);
+  }, FILE_UPLOAD_TIMEOUT);
 }
 
 // Регистрируем обработчик сообщений
