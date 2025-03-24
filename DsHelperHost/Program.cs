@@ -63,10 +63,23 @@ class Program
             EnableRaisingEvents = true
         };
 
+        // Добавляем таймер для контроля частоты обработки событий
+        var lastProcessTime = DateTime.MinValue;
+        var minTimeBetweenEvents = TimeSpan.FromMilliseconds(500);
+
         _watcher.Changed += (s, e) =>
         {
             try
             {
+                // Проверяем, прошло ли достаточно времени с момента последней обработки
+                var now = DateTime.Now;
+                if (now - lastProcessTime < minTimeBetweenEvents)
+                {
+                    LogMessage("[DsHelperHost] Пропуск дублирующего события изменения файла");
+                    return;
+                }
+                
+                lastProcessTime = now;
                 string content = null;
                 for (int i = 0; i < 5; i++)
                 {
@@ -100,20 +113,18 @@ class Program
     {
         new Thread(() =>
         {
-            var buffer = new byte[4];
+            // Вместо того, чтобы активно читать из stdin,
+            // просто проверяем, запущено ли приложение, раз в секунду
             while (_isRunning)
             {
                 try
                 {
-                    if (Console.OpenStandardInput().Read(buffer, 0, 4) == 0)
-                    {
-                        LogMessage("[DsHelperHost] Extension disconnected");
-                        _isRunning = false;
-                    }
+                    // Просто проверяем состояние приложения и спим 1 секунду
+                    Thread.Sleep(1000);
                 }
                 catch (Exception ex)
                 {
-                    LogMessage($"[DsHelperHost] Input error: {ex}");
+                    LogMessage($"[DsHelperHost] Keep-alive thread error: {ex}");
                     _isRunning = false;
                 }
             }
@@ -227,7 +238,122 @@ class Program
 
                     if (!_isRunning) break;
 
+                    // Логирование байтов длины для диагностики
+                    LogMessage($"[DsHelperHost] Raw length bytes: {BitConverter.ToString(lengthBytes)}");
+                    
+                    // Проверка на начало JSON (если первый байт - '{')
+                    if (lengthBytes[0] == '{')
+                    {
+                        LogMessage("[DsHelperHost] Detected direct JSON message without length prefix");
+                        
+                        // Создаем новый буфер для хранения полного сообщения
+                        const int maxMsgLength = 1024 * 1024; // 1 МБ максимум
+                        var fullMessageBuffer = new byte[maxMsgLength];
+                        
+                        // Копируем первые 4 байта в начало буфера
+                        Array.Copy(lengthBytes, 0, fullMessageBuffer, 0, 4);
+                        
+                        // Считываем остаток сообщения
+                        int totalBytesRead = 4;
+                        bool endOfJsonFound = false;
+                        int braceCount = 1; // Счетчик открытых фигурных скобок
+                        
+                        while (totalBytesRead < maxMsgLength && !endOfJsonFound)
+                        {
+                            int bytesReadNow = stdin.Read(fullMessageBuffer, totalBytesRead, 1);
+                            if (bytesReadNow == 0) break;
+                            
+                            // Учитываем вложенные структуры JSON
+                            if (fullMessageBuffer[totalBytesRead] == '{')
+                            {
+                                braceCount++;
+                            }
+                            else if (fullMessageBuffer[totalBytesRead] == '}')
+                            {
+                                braceCount--;
+                                // Когда закрывающих скобок столько же, сколько и открывающих - конец JSON
+                                if (braceCount == 0)
+                                {
+                                    endOfJsonFound = true;
+                                    totalBytesRead++; // Включаем закрывающую скобку
+                                    break;
+                                }
+                            }
+                            
+                            totalBytesRead++;
+                        }
+                        
+                        LogMessage($"[DsHelperHost] Read direct JSON message of {totalBytesRead} bytes");
+                        
+                        // Создаем массив нужного размера и копируем данные
+                        var bytes = new byte[totalBytesRead];
+                        Array.Copy(fullMessageBuffer, 0, bytes, 0, totalBytesRead);
+                        
+                        var message2 = Encoding.UTF8.GetString(bytes);
+                        LogMessage($"[DsHelperHost] Received direct JSON: {message2.Substring(0, Math.Min(message2.Length, 100))}...");
+                        
+                        // Теперь обрабатываем сообщение как обычно
+                        try {
+                            // Десериализуем JSON
+                            var messageObj = JsonConvert.DeserializeObject<dynamic>(message2);
+                            
+                            // Проверяем тип сообщения
+                            if (messageObj != null && messageObj.type != null && messageObj.type.ToString() == "response_text") {
+                                LogMessage("[DsHelperHost] Received response_text message");
+                                
+                                string responseText = messageObj.text.ToString();
+                                LogMessage($"[DsHelperHost] Response text length: {responseText.Length}");
+                                
+                                // Создаем директорию C:\Temp, если она не существует
+                                string outputDir = @"C:\Temp";
+                                if (!Directory.Exists(outputDir)) {
+                                    LogMessage($"[DsHelperHost] Creating directory: {outputDir}");
+                                    Directory.CreateDirectory(outputDir);
+                                }
+                                
+                                // Сохраняем текст в файл
+                                string outputPath = Path.Combine(outputDir, "output.txt");
+                                LogMessage($"[DsHelperHost] Writing to file: {outputPath}");
+                                
+                                try {
+                                    File.WriteAllText(outputPath, responseText);
+                                    LogMessage($"[DsHelperHost] Successfully saved response text to {outputPath} ({responseText.Length} chars)");
+                                } catch (Exception fileEx) {
+                                    LogMessage($"[DsHelperHost] Error writing to file {outputPath}: {fileEx.Message}");
+                                    
+                                    // Попытка альтернативного сохранения
+                                    try {
+                                        string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                                        string alternatePath = Path.Combine(desktopPath, "deepseek_output.txt");
+                                        LogMessage($"[DsHelperHost] Trying alternative location: {alternatePath}");
+                                        
+                                        File.WriteAllText(alternatePath, responseText);
+                                        LogMessage($"[DsHelperHost] Successfully saved to alternative location: {alternatePath}");
+                                    } catch (Exception altEx) {
+                                        LogMessage($"[DsHelperHost] Failed to save to alternative location: {altEx.Message}");
+                                    }
+                                }
+                            } else {
+                                LogMessage($"[DsHelperHost] Received non-response message type: {(messageObj?.type ?? "null")}");
+                            }
+                        } catch (Exception ex) {
+                            LogMessage($"[DsHelperHost] Error processing direct JSON response: {ex.Message}");
+                            LogMessage($"[DsHelperHost] Stack trace: {ex.StackTrace}");
+                        }
+                        
+                        continue; // Продолжаем цикл чтения
+                    }
+                    
+                    // Проверяем порядок байтов - если система не little-endian, меняем порядок
+                    if (!BitConverter.IsLittleEndian)
+                    {
+                        Array.Reverse(lengthBytes);
+                        LogMessage("[DsHelperHost] Reversed bytes due to big-endian system");
+                    }
+
                     int length = BitConverter.ToInt32(lengthBytes, 0);
+                    LogMessage($"[DsHelperHost] Calculated message length: {length}");
+                    
                     if (length < 0 || length > 1024 * 1024)
                     {
                         LogMessage($"[DsHelperHost] Invalid message length: {length}");
@@ -246,8 +372,82 @@ class Program
 
                     if (!_isRunning) break;
 
+                    // Добавляем логирование полной длины прочитанных данных
+                    LogMessage($"[DsHelperHost] Actually read {bytesRead} bytes");
+                    
                     var message = Encoding.UTF8.GetString(messageBytes);
-                    LogMessage($"[DsHelperHost] Received: {message}");
+                    LogMessage($"[DsHelperHost] Received: {message.Substring(0, Math.Min(message.Length, 100))}...");
+                    
+                    // Обработка ответа от расширения
+                    try {
+                        // Проверка на корректность JSON
+                        if (string.IsNullOrWhiteSpace(message))
+                        {
+                            LogMessage("[DsHelperHost] Error: Received empty message");
+                            continue;
+                        }
+                        
+                        // Проверка на валидность JSON перед десериализацией
+                        try
+                        {
+                            // Простая проверка синтаксиса JSON
+                            if (!message.TrimStart().StartsWith("{") || !message.TrimEnd().EndsWith("}"))
+                            {
+                                LogMessage("[DsHelperHost] Error: Message is not valid JSON");
+                                continue;
+                            }
+                        }
+                        catch (Exception jsonEx)
+                        {
+                            LogMessage($"[DsHelperHost] Error checking JSON format: {jsonEx.Message}");
+                        }
+                        
+                        // Десериализуем JSON
+                        var messageObj = JsonConvert.DeserializeObject<dynamic>(message);
+                        
+                        // Проверяем тип сообщения
+                        if (messageObj != null && messageObj.type != null && messageObj.type.ToString() == "response_text") {
+                            LogMessage("[DsHelperHost] Received response_text message");
+                            
+                            string responseText = messageObj.text.ToString();
+                            LogMessage($"[DsHelperHost] Response text length: {responseText.Length}");
+                            
+                            // Создаем директорию C:\Temp, если она не существует
+                            string outputDir = @"C:\Temp";
+                            if (!Directory.Exists(outputDir)) {
+                                LogMessage($"[DsHelperHost] Creating directory: {outputDir}");
+                                Directory.CreateDirectory(outputDir);
+                            }
+                            
+                            // Сохраняем текст в файл
+                            string outputPath = Path.Combine(outputDir, "output.txt");
+                            LogMessage($"[DsHelperHost] Writing to file: {outputPath}");
+                            
+                            try {
+                                File.WriteAllText(outputPath, responseText);
+                                LogMessage($"[DsHelperHost] Successfully saved response text to {outputPath} ({responseText.Length} chars)");
+                            } catch (Exception fileEx) {
+                                LogMessage($"[DsHelperHost] Error writing to file {outputPath}: {fileEx.Message}");
+                                
+                                // Попытка альтернативного сохранения
+                                try {
+                                    string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                                    string alternatePath = Path.Combine(desktopPath, "deepseek_output.txt");
+                                    LogMessage($"[DsHelperHost] Trying alternative location: {alternatePath}");
+                                    
+                                    File.WriteAllText(alternatePath, responseText);
+                                    LogMessage($"[DsHelperHost] Successfully saved to alternative location: {alternatePath}");
+                                } catch (Exception altEx) {
+                                    LogMessage($"[DsHelperHost] Failed to save to alternative location: {altEx.Message}");
+                                }
+                            }
+                        } else {
+                            LogMessage($"[DsHelperHost] Received non-response message type: {(messageObj?.type ?? "null")}");
+                        }
+                    } catch (Exception ex) {
+                        LogMessage($"[DsHelperHost] Error processing response: {ex.Message}");
+                        LogMessage($"[DsHelperHost] Stack trace: {ex.StackTrace}");
+                    }
                 }
                 catch (Exception ex)
                 {
