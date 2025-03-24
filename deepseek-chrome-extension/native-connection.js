@@ -64,10 +64,35 @@ export class NativeConnection extends EventEmitter {
     }
 
     try {
-      this.port.disconnect();
+      // Отправляем сообщение о завершении работы перед отключением
+      try {
+        Logger.info('Отправка сигнала завершения нативному приложению');
+        this.port.postMessage({ type: 'shutdown' });
+      } catch (msgError) {
+        Logger.error('Ошибка при отправке сообщения о завершении', msgError);
+      }
+      
+      // Задержка перед отключением, чтобы сообщение успело дойти
+      setTimeout(() => {
+        try {
+          this.port.disconnect();
+        } catch (error) {
+          Logger.error('Ошибка при отключении от нативного приложения', error);
+        } finally {
+          this.port = null;
+          this.isConnected = false;
+          
+          // Обновляем индикатор состояния
+          this.updateBadge(Config.badges.inactive);
+          
+          // Оповещаем об отключении
+          this.emit('disconnected');
+          
+          Logger.info('Отключено от нативного приложения');
+        }
+      }, 100);
     } catch (error) {
       Logger.error('Ошибка при отключении от нативного приложения', error);
-    } finally {
       this.port = null;
       this.isConnected = false;
       

@@ -5,9 +5,9 @@ using System.Collections.Generic;
 
 class Program
 {
-    private const string SourceFile = @"C:\Temp\command_source.txt";
-    private const string DestinationFile = @"C:\Temp\command.txt";
-    private const string AttachmentFile = @"C:\Temp\attach.txt";
+    private const string SourceFile = @"C:\Book\command_source.txt";
+    private const string DestinationFile = @"C:\Book\command.txt";
+    private const string AttachmentFile = @"C:\Book\attach.txt";
     private const string SuccessMessage = "Изменения успешно перенесены из {0} в {1}.";
     private const string ErrorMessage = "Произошла ошибка: {0}";
     private static int commandIncrement = 1; // Инкремент тестовой команды
@@ -26,20 +26,28 @@ class Program
 
             // Чтение содержимого из command_source.txt
             string content = File.ReadAllText(SourceFile);
-            
+
             // Проверка наличия ссылок на файлы в начале текста
             List<string> fileLinks = new List<string>();
             string processedContent = ProcessFileLinks(content, fileLinks);
-            
+
+            if (fileLinks.Count == 0)
+            {
+                fileLinks.Add(AttachmentFile);
+            }
+
             // Добавление ссылки на файл attach.txt в начало сообщения
             if (!File.Exists(AttachmentFile))
             {
                 File.WriteAllText(AttachmentFile, "файл аттача");
             }
-            
-            // Добавляем путь к файлу attach.txt в начало сообщения
-            processedContent = AttachmentFile + "\n" + processedContent;
-            
+
+            foreach (string link in fileLinks)
+            {
+                // Добавляем путь к файлу в начало сообщения
+                processedContent = link + "\n" + processedContent;
+            }
+
             // Запись обработанного содержимого в command.txt
             File.WriteAllText(DestinationFile, processedContent);
 
@@ -50,7 +58,7 @@ class Program
             Console.WriteLine(string.Format(ErrorMessage, ex.Message));
         }
     }
-    
+
     // Метод для обработки ссылок на файлы в начале текста
     private static string ProcessFileLinks(string content, List<string> fileLinks)
     {
@@ -58,7 +66,7 @@ class Program
         // Предполагается, что каждый путь находится на отдельной строке
         var regex = new Regex(@"^((?:[a-zA-Z]:)?(?:[\\/][^\\/:*?""<>|\r\n]+)+\.?\w*)", RegexOptions.Multiline);
         var matches = regex.Matches(content);
-        
+
         // Если пути найдены, добавляем их в список и удаляем из исходного сообщения
         if (matches.Count > 0)
         {
@@ -70,14 +78,14 @@ class Program
                     fileLinks.Add(filePath);
                 }
             }
-            
+
             // Удаляем пути к файлам из сообщения
             content = regex.Replace(content, "");
-            
+
             // Убираем лишние пустые строки в начале
             content = content.TrimStart('\r', '\n');
         }
-        
+
         return content;
     }
 }

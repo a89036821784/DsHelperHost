@@ -57,7 +57,7 @@ class Program
 
     private static void SetupFileWatcher()
     {
-        _watcher = new FileSystemWatcher(@"C:\Temp", "command.txt")
+        _watcher = new FileSystemWatcher(@"C:\Book", "command.txt")
         {
             NotifyFilter = NotifyFilters.LastWrite,
             EnableRaisingEvents = true
@@ -232,7 +232,14 @@ class Program
                     while (bytesRead < 4 && _isRunning)
                     {
                         int read = stdin.Read(lengthBytes, bytesRead, 4 - bytesRead);
-                        if (read == 0) break;
+                        if (read == 0) 
+                        {
+                            // Если при чтении получили 0 байт, это значит, что поток был закрыт
+                            // (Расширение было отключено)
+                            LogMessage("[DsHelperHost] Stdin connection closed, exiting");
+                            _isRunning = false;
+                            break;
+                        }
                         bytesRead += read;
                     }
 
@@ -240,6 +247,14 @@ class Program
 
                     // Логирование байтов длины для диагностики
                     LogMessage($"[DsHelperHost] Raw length bytes: {BitConverter.ToString(lengthBytes)}");
+                    
+                    // Проверка на пустые сообщения (все байты равны 0)
+                    if (lengthBytes.All(b => b == 0))
+                    {
+                        LogMessage("[DsHelperHost] Received empty message, exiting");
+                        _isRunning = false;
+                        break;
+                    }
                     
                     // Проверка на начало JSON (если первый байт - '{')
                     if (lengthBytes[0] == '{')
@@ -298,43 +313,57 @@ class Program
                             var messageObj = JsonConvert.DeserializeObject<dynamic>(message2);
                             
                             // Проверяем тип сообщения
-                            if (messageObj != null && messageObj.type != null && messageObj.type.ToString() == "response_text") {
-                                LogMessage("[DsHelperHost] Received response_text message");
+                            if (messageObj != null && messageObj.type != null)
+                            {
+                                var msgType = messageObj.type.ToString();
                                 
-                                string responseText = messageObj.text.ToString();
-                                LogMessage($"[DsHelperHost] Response text length: {responseText.Length}");
-                                
-                                // Создаем директорию C:\Temp, если она не существует
-                                string outputDir = @"C:\Temp";
-                                if (!Directory.Exists(outputDir)) {
-                                    LogMessage($"[DsHelperHost] Creating directory: {outputDir}");
-                                    Directory.CreateDirectory(outputDir);
+                                // Обработка команды завершения
+                                if (msgType == "shutdown")
+                                {
+                                    LogMessage("[DsHelperHost] Received shutdown command from extension");
+                                    _isRunning = false;
+                                    break;
                                 }
-                                
-                                // Сохраняем текст в файл
-                                string outputPath = Path.Combine(outputDir, "output.txt");
-                                LogMessage($"[DsHelperHost] Writing to file: {outputPath}");
-                                
-                                try {
-                                    File.WriteAllText(outputPath, responseText);
-                                    LogMessage($"[DsHelperHost] Successfully saved response text to {outputPath} ({responseText.Length} chars)");
-                                } catch (Exception fileEx) {
-                                    LogMessage($"[DsHelperHost] Error writing to file {outputPath}: {fileEx.Message}");
+                                // Обработка текстового ответа
+                                else if (msgType == "response_text") 
+                                {
+                                    LogMessage("[DsHelperHost] Received response_text message");
                                     
-                                    // Попытка альтернативного сохранения
-                                    try {
-                                        string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-                                        string alternatePath = Path.Combine(desktopPath, "deepseek_output.txt");
-                                        LogMessage($"[DsHelperHost] Trying alternative location: {alternatePath}");
-                                        
-                                        File.WriteAllText(alternatePath, responseText);
-                                        LogMessage($"[DsHelperHost] Successfully saved to alternative location: {alternatePath}");
-                                    } catch (Exception altEx) {
-                                        LogMessage($"[DsHelperHost] Failed to save to alternative location: {altEx.Message}");
+                                    string responseText = messageObj.text.ToString();
+                                    LogMessage($"[DsHelperHost] Response text length: {responseText.Length}");
+                                    
+                                    // Создаем директорию C:\Book, если она не существует
+                                    string outputDir = @"C:\Book";
+                                    if (!Directory.Exists(outputDir)) {
+                                        LogMessage($"[DsHelperHost] Creating directory: {outputDir}");
+                                        Directory.CreateDirectory(outputDir);
                                     }
+                                    
+                                    // Сохраняем текст в файл
+                                    string outputPath = Path.Combine(outputDir, "output.txt");
+                                    LogMessage($"[DsHelperHost] Writing to file: {outputPath}");
+                                    
+                                    try {
+                                        File.WriteAllText(outputPath, responseText);
+                                        LogMessage($"[DsHelperHost] Successfully saved response text to {outputPath} ({responseText.Length} chars)");
+                                    } catch (Exception fileEx) {
+                                        LogMessage($"[DsHelperHost] Error writing to file {outputPath}: {fileEx.Message}");
+                                        
+                                        // Попытка альтернативного сохранения
+                                        try {
+                                            string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                                            string alternatePath = Path.Combine(desktopPath, "deepseek_output.txt");
+                                            LogMessage($"[DsHelperHost] Trying alternative location: {alternatePath}");
+                                            
+                                            File.WriteAllText(alternatePath, responseText);
+                                            LogMessage($"[DsHelperHost] Successfully saved to alternative location: {alternatePath}");
+                                        } catch (Exception altEx) {
+                                            LogMessage($"[DsHelperHost] Failed to save to alternative location: {altEx.Message}");
+                                        }
+                                    }
+                                } else {
+                                    LogMessage($"[DsHelperHost] Received non-response message type: {(messageObj?.type ?? "null")}");
                                 }
-                            } else {
-                                LogMessage($"[DsHelperHost] Received non-response message type: {(messageObj?.type ?? "null")}");
                             }
                         } catch (Exception ex) {
                             LogMessage($"[DsHelperHost] Error processing direct JSON response: {ex.Message}");
@@ -406,43 +435,57 @@ class Program
                         var messageObj = JsonConvert.DeserializeObject<dynamic>(message);
                         
                         // Проверяем тип сообщения
-                        if (messageObj != null && messageObj.type != null && messageObj.type.ToString() == "response_text") {
-                            LogMessage("[DsHelperHost] Received response_text message");
+                        if (messageObj != null && messageObj.type != null)
+                        {
+                            var msgType = messageObj.type.ToString();
                             
-                            string responseText = messageObj.text.ToString();
-                            LogMessage($"[DsHelperHost] Response text length: {responseText.Length}");
-                            
-                            // Создаем директорию C:\Temp, если она не существует
-                            string outputDir = @"C:\Temp";
-                            if (!Directory.Exists(outputDir)) {
-                                LogMessage($"[DsHelperHost] Creating directory: {outputDir}");
-                                Directory.CreateDirectory(outputDir);
+                            // Обработка команды завершения
+                            if (msgType == "shutdown")
+                            {
+                                LogMessage("[DsHelperHost] Received shutdown command from extension");
+                                _isRunning = false;
+                                break;
                             }
-                            
-                            // Сохраняем текст в файл
-                            string outputPath = Path.Combine(outputDir, "output.txt");
-                            LogMessage($"[DsHelperHost] Writing to file: {outputPath}");
-                            
-                            try {
-                                File.WriteAllText(outputPath, responseText);
-                                LogMessage($"[DsHelperHost] Successfully saved response text to {outputPath} ({responseText.Length} chars)");
-                            } catch (Exception fileEx) {
-                                LogMessage($"[DsHelperHost] Error writing to file {outputPath}: {fileEx.Message}");
+                            // Обработка текстового ответа
+                            else if (msgType == "response_text") 
+                            {
+                                LogMessage("[DsHelperHost] Received response_text message");
                                 
-                                // Попытка альтернативного сохранения
-                                try {
-                                    string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-                                    string alternatePath = Path.Combine(desktopPath, "deepseek_output.txt");
-                                    LogMessage($"[DsHelperHost] Trying alternative location: {alternatePath}");
-                                    
-                                    File.WriteAllText(alternatePath, responseText);
-                                    LogMessage($"[DsHelperHost] Successfully saved to alternative location: {alternatePath}");
-                                } catch (Exception altEx) {
-                                    LogMessage($"[DsHelperHost] Failed to save to alternative location: {altEx.Message}");
+                                string responseText = messageObj.text.ToString();
+                                LogMessage($"[DsHelperHost] Response text length: {responseText.Length}");
+                                
+                                // Создаем директорию C:\Book, если она не существует
+                                string outputDir = @"C:\Book";
+                                if (!Directory.Exists(outputDir)) {
+                                    LogMessage($"[DsHelperHost] Creating directory: {outputDir}");
+                                    Directory.CreateDirectory(outputDir);
                                 }
+                                
+                                // Сохраняем текст в файл
+                                string outputPath = Path.Combine(outputDir, "output.txt");
+                                LogMessage($"[DsHelperHost] Writing to file: {outputPath}");
+                                
+                                try {
+                                    File.WriteAllText(outputPath, responseText);
+                                    LogMessage($"[DsHelperHost] Successfully saved response text to {outputPath} ({responseText.Length} chars)");
+                                } catch (Exception fileEx) {
+                                    LogMessage($"[DsHelperHost] Error writing to file {outputPath}: {fileEx.Message}");
+                                    
+                                    // Попытка альтернативного сохранения
+                                    try {
+                                        string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                                        string alternatePath = Path.Combine(desktopPath, "deepseek_output.txt");
+                                        LogMessage($"[DsHelperHost] Trying alternative location: {alternatePath}");
+                                        
+                                        File.WriteAllText(alternatePath, responseText);
+                                        LogMessage($"[DsHelperHost] Successfully saved to alternative location: {alternatePath}");
+                                    } catch (Exception altEx) {
+                                        LogMessage($"[DsHelperHost] Failed to save to alternative location: {altEx.Message}");
+                                    }
+                                }
+                            } else {
+                                LogMessage($"[DsHelperHost] Received non-response message type: {(messageObj?.type ?? "null")}");
                             }
-                        } else {
-                            LogMessage($"[DsHelperHost] Received non-response message type: {(messageObj?.type ?? "null")}");
                         }
                     } catch (Exception ex) {
                         LogMessage($"[DsHelperHost] Error processing response: {ex.Message}");
