@@ -1,0 +1,64 @@
+/**
+ * Стили для улучшения пользовательского опыта в DeepSeek
+ */
+
+/* Индикатор загрузки */
+.ds-helper-loading::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(to right, #4286f4, #42f4a1);
+  background-size: 200% 100%;
+  animation: loading-bar 1.5s infinite;
+  z-index: 9999;
+}
+
+/* Стиль пульсации для визуальной индикации обработки */
+@keyframes loading-bar {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+
+/* Стиль для индикации активного состояния */
+.ds-helper-active {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  padding: 5px 10px;
+  background-color: rgba(66, 134, 244, 0.8);
+  color: #fff;
+  border-radius: 4px;
+  font-size: 12px;
+  z-index: 9999;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+/* Стиль для сообщений об ошибках */
+.ds-helper-error {
+  position: fixed;
+  bottom: 10px;
+  right: 10px;
+  padding: 10px 15px;
+  background-color: rgba(244, 67, 54, 0.9);
+  color: #fff;
+  border-radius: 4px;
+  font-size: 12px;
+  z-index: 9999;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+  max-width: 250px;
+  animation: fade-in 0.3s, fade-out 0.3s 5s forwards;
+}
+
+/* Анимации для сообщений */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(10px); }
+} 
